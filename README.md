@@ -34,6 +34,11 @@ A top-bar indicator for your Claude and Gemini plan usage (GNOME Shell 45–49).
 - Gemini CLI: reads `~/.gemini/oauth_creds.json` (never writes it). When the access token
   has expired it gets a new one with the stored refresh token (kept in memory only), then
   calls `loadCodeAssist` and `retrieveUserQuota` on `cloudcode-pa.googleapis.com`.
+  Refreshing needs the Gemini CLI's OAuth client ID/secret, which are not shipped with the
+  extension: set them in Settings, or export `GEMINI_OAUTH_CLIENT_ID` and
+  `GEMINI_OAUTH_CLIENT_SECRET` in your session environment (e.g. a file in
+  `~/.config/environment.d/`, then log out and back in). Without them, the extension only
+  works while the CLI's own access token is still valid.
   Encrypted/keychain credential storage (`GEMINI_FORCE_ENCRYPTED_FILE_STORAGE=true`) is
   not supported. Set `GOOGLE_CLOUD_PROJECT` in your session environment if your account
   needs it.

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="#bebebe" transform="translate(8 8)">
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(45)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(90)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(135)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(180)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(225)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(270)"/>
+    <rect x="-1" y="-7" width="2" height="5.2" rx="1" transform="rotate(315)"/>
+    <circle r="1.6"/>
+  </g>
+</svg>

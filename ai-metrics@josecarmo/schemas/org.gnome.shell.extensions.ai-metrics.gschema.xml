@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.ai-metrics" path="/org/gnome/shell/extensions/ai-metrics/">
+    <key name="refresh-interval" type="i">
+      <range min="30" max="3600"/>
+      <default>120</default>
+      <summary>Refresh interval (seconds)</summary>
+    </key>
+    <key name="panel-display" type="s">
+      <choices>
+        <choice value="session"/>
+        <choice value="weekly"/>
+        <choice value="both"/>
+        <choice value="tokens-today"/>
+        <choice value="icon"/>
+      </choices>
+      <default>'session'</default>
+      <summary>What to show next to the panel icon</summary>
+    </key>
+    <key name="show-local-stats" type="b">
+      <default>true</default>
+      <summary>Parse local Claude Code transcripts for token totals</summary>
+    </key>
+    <key name="claude-config-dir" type="s">
+      <default>''</default>
+      <summary>Claude config directory (empty = $CLAUDE_CONFIG_DIR or ~/.claude)</summary>
+    </key>
+    <key name="warning-threshold" type="i">
+      <range min="1" max="100"/>
+      <default>75</default>
+      <summary>Percentage at which usage is shown as a warning</summary>
+    </key>
+    <key name="critical-threshold" type="i">
+      <range min="1" max="100"/>
+      <default>90</default>
+      <summary>Percentage at which usage is shown as critical</summary>
+    </key>
+    <key name="notify" type="b">
+      <default>true</default>
+      <summary>Send a notification when a limit crosses the warning or critical threshold</summary>
+    </key>
+    <key name="gemini-antigravity" type="b">
+      <default>true</default>
+      <summary>Show model quotas from a running Antigravity IDE</summary>
+    </key>
+    <key name="gemini-cli" type="b">
+      <default>true</default>
+      <summary>Show Gemini CLI quotas and local token totals</summary>
+    </key>
+    <key name="gemini-config-dir" type="s">
+      <default>''</default>
+      <summary>Gemini CLI config directory (empty = ~/.gemini)</summary>
+    </key>
+    <key name="gemini-oauth-client-id" type="s">
+      <default>''</default>
+      <summary>Gemini CLI OAuth client ID (empty = $GEMINI_OAUTH_CLIENT_ID)</summary>
+    </key>
+    <key name="gemini-oauth-client-secret" type="s">
+      <default>''</default>
+      <summary>Gemini CLI OAuth client secret (empty = $GEMINI_OAUTH_CLIENT_SECRET)</summary>
+    </key>
+    <key name="panel-gemini" type="b">
+      <default>true</default>
+      <summary>Also show the highest Gemini quota usage in the top bar</summary>
+    </key>
+  </schema>
+</schemalist>

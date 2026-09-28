@@ -1,0 +1,8 @@
+{
+  "uuid": "search-dev-env@josecarmo",
+  "name": "Search Dev Environment",
+  "description": "Turn the Search development environment (Sophos OpenVPN + Kube Monitor) on and off from the top bar.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "settings-schema": "org.gnome.shell.extensions.search-dev-env",
+  "version": 1
+}

@@ -1,0 +1,26 @@
+.ai-metrics-panel-label { padding-left: 4px; }
+.ai-metrics-panel-label.warning, .ai-metrics-pct.warning { color: #f5c211; }
+.ai-metrics-panel-label.critical, .ai-metrics-pct.critical { color: #ff7b63; }
+
+.ai-metrics-menu { min-width: 300px; }
+.ai-metrics-header { font-weight: bold; }
+.ai-metrics-row-title { font-weight: bold; }
+.ai-metrics-pct { font-weight: bold; font-feature-settings: "tnum"; }
+.ai-metrics-sub { font-size: 0.85em; color: #9a9996; }
+.ai-metrics-error { color: #ff7b63; font-size: 0.9em; }
+.ai-metrics-value { font-feature-settings: "tnum"; }
+
+.ai-metrics-bar {
+  height: 6px;
+  width: 280px;
+  margin: 4px 0;
+  border-radius: 3px;
+  background-color: rgba(255, 255, 255, 0.12);
+}
+.ai-metrics-bar-fill {
+  height: 6px;
+  border-radius: 3px;
+  background-color: #d97757;
+}
+.ai-metrics-bar-fill.warning { background-color: #f5c211; }
+.ai-metrics-bar-fill.critical { background-color: #e01b24; }

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.search-dev-env" path="/org/gnome/shell/extensions/search-dev-env/">
+    <key name="vpn-directory" type="s">
+      <default>'/media/jose/arquivos/Projetos/Search/VPN/sophos'</default>
+      <summary>Directory containing the OpenVPN config (openvpn runs with --cd here)</summary>
+    </key>
+    <key name="vpn-config" type="s">
+      <default>'search-vpn1.ovpn'</default>
+      <summary>OpenVPN config file, relative to the VPN directory</summary>
+    </key>
+    <key name="vpn-check-url" type="s">
+      <default>'https://deploy.searchtecnologia.com.br'</default>
+      <summary>URL probed while the VPN is connected; any HTTP response means the network behind it is reachable (empty: skip the check)</summary>
+    </key>
+    <key name="kube-directory" type="s">
+      <default>'~/Projetos/kube-monitor'</default>
+      <summary>Kube Monitor project directory</summary>
+    </key>
+    <key name="kube-start-command" type="s">
+      <default>'./run.sh'</default>
+      <summary>Command that starts Kube Monitor (run with bash -lc inside the project directory)</summary>
+    </key>
+    <key name="kube-port" type="i">
+      <range min="1" max="65535"/>
+      <default>8900</default>
+      <summary>Port Kube Monitor listens on (used for status and to stop it)</summary>
+    </key>
+    <key name="kube-app-id" type="s">
+      <default>''</default>
+      <summary>Desktop file ID of the Kube Monitor PWA (empty: find the app named “Kube Monitor”, else open the browser)</summary>
+    </key>
+    <key name="refresh-interval" type="i">
+      <range min="1" max="300"/>
+      <default>5</default>
+      <summary>Status refresh interval (seconds)</summary>
+    </key>
+  </schema>
+</schemalist>

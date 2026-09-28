@@ -1,0 +1,8 @@
+.sde-header { font-weight: bold; }
+
+.sde-status { padding-left: 8px; font-size: 0.85em; color: #9a9996; }
+.sde-status.sde-on { color: #57e389; }
+.sde-status.sde-starting, .sde-status.sde-stopping, .sde-status.sde-limited { color: #f5c211; }
+
+.system-status-icon.sde-on { color: #57e389; }
+.system-status-icon.sde-partial { color: #f5c211; }

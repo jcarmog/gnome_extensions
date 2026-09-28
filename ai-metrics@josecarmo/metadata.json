@@ -1,0 +1,9 @@
+{
+  "uuid": "ai-metrics@josecarmo",
+  "name": "AI Metrics",
+  "description": "Shows your Claude and Gemini plan limits (session and weekly usage, reset times) and local token totals in the top bar.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "settings-schema": "org.gnome.shell.extensions.ai-metrics",
+  "url": "https://github.com/josecarmo/ai-metrics",
+  "version": 1
+}
