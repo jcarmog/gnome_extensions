@@ -12,7 +12,7 @@ export default class SearchDevEnvPreferences extends ExtensionPreferences {
 
         const vpn = new Adw.PreferencesGroup({
             title: 'VPN',
-            description: 'Runs “openvpn --cd <directory> --config <file>” through pkexec, so you are asked for your password when connecting.',
+            description: 'Runs “openvpn --cd &lt;directory&gt; --config &lt;file&gt;” through pkexec, so you are asked for your password when connecting. After running setup-nopasswd.sh, no password is asked and these two paths are ignored (it uses its own copy of the config).',
         });
         page.add(vpn);
         vpn.add(this._entryRow(settings, 'vpn-directory', 'Directory'));

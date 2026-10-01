@@ -29,6 +29,23 @@ yellow when only part of the environment is up and green when everything is runn
   writing `app.log` in the project directory.
 - Disabling the extension or logging out does not stop the VPN or Kube Monitor.
 
+### Connecting without a password
+
+```bash
+sudo ./setup-nopasswd.sh    # or: sudo ./setup-nopasswd.sh <vpn-directory> <config-file>
+```
+
+This copies the config (and its `auth-user-pass` file) to `/etc/openvpn/search-dev-env/`
+(root only), installs the helper `/usr/local/sbin/search-dev-env-vpn`, and adds a polkit rule
+(`/etc/polkit-1/rules.d/50-search-dev-env-vpn.rules`) that lets your user run that helper through
+`pkexec` without authenticating. The extension uses the helper whenever it is installed, and the
+VPN directory/config settings are then ignored. The helper only starts that fixed config or deletes
+an orphaned `ovpn-dco` interface. It never takes paths from the caller, because the original config on
+the shared disk is world-writable and its `up`/`down` scripts run as root.
+
+Re-run it after changing the VPN config. `sudo ./setup-nopasswd.sh --uninstall` restores the
+password prompt.
+
 Paths, the start command, the port and the refresh interval can be changed in Settings.
 
 ## Install

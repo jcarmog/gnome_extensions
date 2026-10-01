@@ -22,6 +22,8 @@ const TITLE = 'Search Dev Environment';
 const KUBE_START_TIMEOUT = 300 * 1000; // mvn build + Spring Boot startup
 const STOP_TIMEOUT = 30 * 1000;
 const PKEXEC_CANCELLED = [126, 127];
+// Installed by setup-nopasswd.sh; a polkit rule lets it run through pkexec without a password.
+const NOPASSWD_HELPER = '/usr/local/sbin/search-dev-env-vpn';
 
 const STATUS_TEXT = {
     off: 'Off',
@@ -130,7 +132,8 @@ async function output(argv) {
 async function dcoInterfaces() {
     const json = await output(['ip', '-j', 'addr', 'show', 'type', 'ovpn-dco']);
     try {
-        return JSON.parse(json ?? '[]').map(i => ({
+        // iproute2 prints an empty {} for every interface the type filter excludes.
+        return JSON.parse(json ?? '[]').filter(i => i.ifname).map(i => ({
             name: i.ifname,
             address: i.addr_info?.find(a => a.family === 'inet')?.local ?? '',
         }));
@@ -213,15 +216,17 @@ class DevEnvIndicator extends PanelMenu.Button {
     _startVpn() {
         if (this._vpn.state !== 'off')
             return;
+        const helper = GLib.file_test(NOPASSWD_HELPER, GLib.FileTest.IS_EXECUTABLE);
         const dir = expandHome(this._settings.get_string('vpn-directory'));
         const config = this._settings.get_string('vpn-config');
         const openvpn = GLib.find_program_in_path('openvpn');
         const systemdRun = GLib.find_program_in_path('systemd-run');
-        if (!openvpn || !systemdRun) {
+        // The helper runs its own root-owned copy of the config.
+        if (!helper && (!openvpn || !systemdRun)) {
             this._error(`${openvpn ? 'systemd-run' : 'openvpn'} is not installed`);
             return;
         }
-        if (!GLib.file_test(GLib.build_filenamev([dir, config]), GLib.FileTest.EXISTS)) {
+        if (!helper && !GLib.file_test(GLib.build_filenamev([dir, config]), GLib.FileTest.EXISTS)) {
             this._error(`VPN config not found: ${dir}/${config}`);
             return;
         }
@@ -232,14 +237,14 @@ class DevEnvIndicator extends PanelMenu.Button {
         try {
             // systemd-run --scope moves openvpn out of gnome-shell's cgroup, which
             // systemd kills on logout; it still runs in the foreground so we can wait on it.
-            proc = spawn([
+            proc = spawn(helper ? ['pkexec', NOPASSWD_HELPER, 'start'] : [
                 'pkexec', systemdRun, '--scope', '--collect', '--quiet', '--unit', 'search-dev-env-vpn',
                 openvpn,
                 '--cd', dir,
                 '--config', config,
                 '--management', this._socketPath, 'unix',
                 '--management-client-user', GLib.get_user_name(),
-            ], {cwd: dir, logPath: this._vpnLog});
+            ], {cwd: helper ? null : dir, logPath: this._vpnLog});
         } catch (e) {
             this._error(`Could not start OpenVPN: ${e.message}`);
             return;
@@ -287,7 +292,10 @@ class DevEnvIndicator extends PanelMenu.Button {
     async _removeOrphan(ifname) {
         let status;
         try {
-            status = await waitProcess(spawn(['pkexec', 'ip', 'link', 'delete', ifname]));
+            const argv = GLib.file_test(NOPASSWD_HELPER, GLib.FileTest.IS_EXECUTABLE)
+                ? ['pkexec', NOPASSWD_HELPER, 'remove-dco', ifname]
+                : ['pkexec', 'ip', 'link', 'delete', ifname];
+            status = await waitProcess(spawn(argv));
         } catch {
             status = -1;
         }
