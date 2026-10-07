@@ -26,7 +26,8 @@ yellow when only part of the environment is up and green when everything is runn
   SIGTERM to that process (`fuser -k -TERM 8900/tcp`).
 - Logs: OpenVPN output goes to `~/.cache/search-dev-env/openvpn.log`, the `run.sh` build
   output to `~/.cache/search-dev-env/kube-monitor-start.log`, and the app itself keeps
-  writing `app.log` in the project directory.
+  writing `app.log` in the project directory. The menu log entries follow them with
+  `tail -F` in a terminal window.
 - Disabling the extension or logging out does not stop the VPN or Kube Monitor.
 
 ### Connecting without a password

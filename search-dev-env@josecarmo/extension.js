@@ -44,8 +44,26 @@ function cacheDir() {
     return dir;
 }
 
-function openPath(path) {
-    Gio.AppInfo.launch_default_for_uri_async(Gio.File.new_for_path(path).get_uri(), null, null, null);
+// Terminal emulators in order of preference, with the arguments that precede the command.
+const TERMINALS = [
+    ['xdg-terminal-exec'],
+    ['ptyxis', '--'],
+    ['kgx', '--'],
+    ['gnome-terminal', '--'],
+    ['x-terminal-emulator', '-e'],
+];
+
+/** Follows a log file in a terminal window; -F keeps waiting if the file does not exist yet. */
+function tailInTerminal(path) {
+    const command = ['tail', '-n', '200', '-F', path];
+    for (const [program, ...args] of TERMINALS) {
+        const exe = GLib.find_program_in_path(program);
+        if (exe) {
+            spawn([exe, ...args, ...command]);
+            return;
+        }
+    }
+    Main.notifyError(TITLE, 'No terminal emulator found to show the log.');
 }
 
 /**
@@ -194,10 +212,10 @@ class DevEnvIndicator extends PanelMenu.Button {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this._openKubeItem = this.menu.addAction('Open Kube Monitor', () => this._openKube());
-        this.menu.addAction('VPN log', () => openPath(this._vpnLog));
+        this.menu.addAction('VPN log', () => tailInTerminal(this._vpnLog));
         this.menu.addAction('Kube Monitor log', () => {
             const appLog = GLib.build_filenamev([expandHome(this._settings.get_string('kube-directory')), 'app.log']);
-            openPath(GLib.file_test(appLog, GLib.FileTest.EXISTS) ? appLog : this._kubeStartLog);
+            tailInTerminal(GLib.file_test(appLog, GLib.FileTest.EXISTS) ? appLog : this._kubeStartLog);
         });
         this.menu.addAction('Settings', () => this._ext.openPreferences());
     }
