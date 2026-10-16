@@ -28,6 +28,7 @@ const NOPASSWD_HELPER = '/usr/local/sbin/search-dev-env-vpn';
 const STATUS_TEXT = {
     off: 'Off',
     starting: 'Starting…',
+    reconnecting: 'Reconnecting…',
     on: 'Running',
     stopping: 'Stopping…',
 };
@@ -121,6 +122,10 @@ async function isUrlReachable(session, url) {
 }
 
 function spawn(argv, {cwd = null, logPath = null} = {}) {
+    // The launcher does not truncate the file, so a shorter run would leave the end of the
+    // previous one behind. Keep the previous run as .1 instead.
+    if (logPath)
+        GLib.rename(logPath, `${logPath}.1`);
     const launcher = new Gio.SubprocessLauncher({
         flags: logPath ? Gio.SubprocessFlags.STDERR_MERGE : Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE,
     });
@@ -158,6 +163,21 @@ async function dcoInterfaces() {
     } catch {
         return [];
     }
+}
+
+/** Explains why openvpn exited, from the end of its log. */
+function vpnExitReason(logPath) {
+    let text;
+    try {
+        text = new TextDecoder().decode(GLib.file_get_contents(logPath)[1]).slice(-20000);
+    } catch {
+        return '';
+    }
+    if (text.includes('AUTH_FAILED'))
+        return 'the server rejected the login (AUTH_FAILED). If it was connected a moment ago, wait a minute before reconnecting; otherwise check the credentials';
+    if (text.includes('Exiting due to fatal error'))
+        return 'OpenVPN exited with a fatal error';
+    return '';
 }
 
 function waitProcess(proc) {
@@ -262,6 +282,10 @@ class DevEnvIndicator extends PanelMenu.Button {
                 '--config', config,
                 '--management', this._socketPath, 'unix',
                 '--management-client-user', GLib.get_user_name(),
+                // Run the down script while the tunnel still exists: after a reconnect that
+                // changes the pushed options, update-systemd-resolved otherwise fails on the
+                // already deleted tun0 and openvpn exits with a fatal error.
+                '--down-pre',
             ], {cwd: helper ? null : dir, logPath: this._vpnLog});
         } catch (e) {
             this._error(`Could not start OpenVPN: ${e.message}`);
@@ -276,7 +300,7 @@ class DevEnvIndicator extends PanelMenu.Button {
                 if (PKEXEC_CANCELLED.includes(status))
                     this._error('VPN not started: authentication was cancelled');
                 else if (status !== 0)
-                    this._error(`OpenVPN exited with status ${status}. See the VPN log.`);
+                    this._error(`VPN not started: ${vpnExitReason(this._vpnLog) || `OpenVPN exited with status ${status}`}. See the VPN log.`);
                 this._vpn.pending = null;
             }
             this._refresh();
@@ -464,7 +488,17 @@ class DevEnvIndicator extends PanelMenu.Button {
             if (this._destroyed)
                 return;
 
+            const wasUp = ['on', 'reconnecting'].includes(this._vpn.state);
+            const userStop = this._vpn.pending === 'stopping';
             this._vpn.state = this._resolve(this._vpn, vpn.connected, vpn.running, 0);
+            // Not connected, still running and not started from here: openvpn lost the
+            // connection (or the shell restarted mid-connect) and is retrying on its own.
+            if (this._vpn.state === 'starting' && this._vpn.pending !== 'starting')
+                this._vpn.state = 'reconnecting';
+            if (wasUp && !userStop && this._vpn.state === 'off') {
+                const reason = vpnExitReason(this._vpnLog);
+                this._error(`VPN disconnected${reason ? `: ${reason}` : ''}. See the VPN log.`);
+            }
             this._vpn.detail = vpn.detail;
             this._vpn.limited = this._vpn.state === 'on' && !vpn.reachable;
             this._kube.state = this._resolve(this._kube, kubeUp, this._kube.proc !== null, KUBE_START_TIMEOUT);
@@ -502,7 +536,7 @@ class DevEnvIndicator extends PanelMenu.Button {
 
         this._syncItem(this._vpnItem, this._vpnLabel, this._vpn);
         this._syncItem(this._kubeItem, this._kubeLabel, this._kube);
-        this._allItem.setToggleState([vpn, kube].every(s => s === 'on' || s === 'starting'));
+        this._allItem.setToggleState([vpn, kube].every(s => s !== 'off' && s !== 'stopping'));
         this._openKubeItem.visible = kube === 'on';
 
         this._icon.icon_name = vpn === 'off' ? 'network-vpn-disabled-symbolic' : 'network-vpn-symbolic';
@@ -515,7 +549,7 @@ class DevEnvIndicator extends PanelMenu.Button {
     }
 
     _syncItem(item, label, service) {
-        item.setToggleState(service.state === 'on' || service.state === 'starting');
+        item.setToggleState(service.state !== 'off' && service.state !== 'stopping');
         let text = STATUS_TEXT[service.state];
         if (service.detail && service.state !== 'off')
             text = service.state === 'on' ? `${text} · ${service.detail}` : `${text} (${service.detail})`;

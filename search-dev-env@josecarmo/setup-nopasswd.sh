@@ -52,7 +52,8 @@ start)
     exec systemd-run --scope --collect --quiet --unit search-dev-env-vpn \\
         openvpn --cd $CONF_DIR --config $CONFIG \\
         --management "\$home/.cache/search-dev-env/vpn.sock" unix \\
-        --management-client-user "\$user"
+        --management-client-user "\$user" \\
+        --down-pre
     ;;
 remove-dco)
     # Only orphaned OpenVPN kernel tunnels may be deleted.
