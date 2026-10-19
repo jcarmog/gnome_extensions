@@ -75,7 +75,12 @@ async function vpnManagement(socketPath, command) {
     const client = new Gio.SocketClient({timeout: 3});
     const conn = await client.connect_async(new Gio.UnixSocketAddress({path: socketPath}), null);
     try {
-        const input = new Gio.DataInputStream({base_stream: conn.get_input_stream()});
+        // The management interface ends lines with \r\n; with the default LF a trailing \r
+        // would be left on every line, END would never match and the read would time out.
+        const input = new Gio.DataInputStream({
+            base_stream: conn.get_input_stream(),
+            newline_type: Gio.DataStreamNewlineType.CR_LF,
+        });
         await input.read_line_async(GLib.PRIORITY_DEFAULT, null); // ">INFO:OpenVPN Management Interface…"
         await conn.get_output_stream().write_all_async(
             new TextEncoder().encode(`${command}\n`), GLib.PRIORITY_DEFAULT, null);
