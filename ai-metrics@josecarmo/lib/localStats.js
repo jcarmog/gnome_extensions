@@ -169,9 +169,12 @@ export class LocalStats {
         }
     }
 
+    // A short timeout rather than a low-priority idle: inside the shell, idles
+    // can be starved indefinitely while the compositor stays busy, which
+    // would stall the scan (and every refresh waiting on it).
     _yield() {
         return new Promise(resolve => {
-            const id = GLib.idle_add(GLib.PRIORITY_LOW, () => {
+            const id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1, () => {
                 this._idleIds.delete(id);
                 resolve();
                 return GLib.SOURCE_REMOVE;

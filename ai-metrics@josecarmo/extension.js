@@ -16,6 +16,7 @@ import {LocalStats} from './lib/localStats.js';
 
 const BAR_WIDTH = 280;
 const HOUR = 3600 * 1000;
+const REFRESH_TIMEOUT = 60; // seconds per data source
 const USAGE_PAGE = 'https://claude.ai/settings/usage';
 
 const LIMIT_LABELS = {
@@ -137,6 +138,7 @@ class AiMetricsIndicator extends PanelMenu.Button {
         this._notified = new Map();
         this._refreshing = false;
         this._timerId = 0;
+        this._timeoutIds = new Set();
 
         const box = new St.BoxLayout({style_class: 'panel-status-menu-box'});
         this._icon = new St.Icon({
@@ -256,15 +258,21 @@ class AiMetricsIndicator extends PanelMenu.Button {
         const wantAntigravity = this._settings.get_boolean('gemini-antigravity');
         const wantGeminiCli = this._settings.get_boolean('gemini-cli');
 
-        const [remote, local, antigravity, geminiCli, geminiLocal] = await Promise.allSettled([
-            this._api.fetchUsage(dir),
-            wantLocal ? this._local.scan(GLib.build_filenamev([dir, 'projects'])) : Promise.resolve(null),
-            wantAntigravity ? this._antigravity.fetchQuota() : Promise.resolve(null),
-            wantGeminiCli ? this._geminiCli.fetchQuota(gdir, this._geminiOAuth) : Promise.resolve(null),
-            wantGeminiCli ? this._geminiLocal.scan(GLib.build_filenamev([gdir, 'tmp'])) : Promise.resolve(null),
-        ]);
+        let results;
+        try {
+            results = await Promise.allSettled([
+                this._api.fetchUsage(dir),
+                wantLocal ? this._local.scan(GLib.build_filenamev([dir, 'projects'])) : Promise.resolve(null),
+                wantAntigravity ? this._antigravity.fetchQuota() : Promise.resolve(null),
+                wantGeminiCli ? this._geminiCli.fetchQuota(gdir, this._geminiOAuth) : Promise.resolve(null),
+                wantGeminiCli ? this._geminiLocal.scan(GLib.build_filenamev([gdir, 'tmp'])) : Promise.resolve(null),
+            ].map(p => this._withTimeout(p)));
+        } finally {
+            this._refreshing = false;
+        }
         if (this._destroyed)
             return;
+        const [remote, local, antigravity, geminiCli, geminiLocal] = results;
 
         const settle = (result, key) => {
             if (result.status === 'fulfilled') {
@@ -297,10 +305,28 @@ class AiMetricsIndicator extends PanelMenu.Button {
         this._state.localError = local.status === 'rejected' ? local.reason : null;
         this._state.localEnabled = wantLocal;
 
-        this._refreshing = false;
         this._refreshItem.label.text = 'Refresh now';
         this._render();
         this._maybeNotify();
+    }
+
+    // A source that never settles must not block the others or every later refresh.
+    _withTimeout(promise) {
+        let id = 0;
+        const timeout = new Promise((_resolve, reject) => {
+            id = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, REFRESH_TIMEOUT, () => {
+                this._timeoutIds.delete(id);
+                id = 0;
+                reject(new Error(`Timed out after ${REFRESH_TIMEOUT}s`));
+                return GLib.SOURCE_REMOVE;
+            });
+            this._timeoutIds.add(id);
+        });
+        return Promise.race([promise, timeout]).finally(() => {
+            this._timeoutIds.delete(id);
+            if (id)
+                GLib.source_remove(id);
+        });
     }
 
     _level(percent) {
@@ -592,6 +618,9 @@ class AiMetricsIndicator extends PanelMenu.Button {
             GLib.source_remove(this._timerId);
             this._timerId = 0;
         }
+        for (const id of this._timeoutIds)
+            GLib.source_remove(id);
+        this._timeoutIds.clear();
         for (const id of this._settingsIds)
             this._settings.disconnect(id);
         this._api.destroy();
