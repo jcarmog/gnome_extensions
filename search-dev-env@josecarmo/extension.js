@@ -19,6 +19,7 @@ Gio._promisify(Soup.Session.prototype, 'send_async');
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 const TITLE = 'Search Dev Environment';
+const VPN_UNIT = 'search-dev-env-vpn.scope';
 const KUBE_START_TIMEOUT = 300 * 1000; // mvn build + Spring Boot startup
 const STOP_TIMEOUT = 30 * 1000;
 const PKEXEC_CANCELLED = [126, 127];
@@ -152,13 +153,18 @@ async function output(argv) {
     }
 }
 
+async function isVpnUnitActive() {
+    return (await output(['systemctl', 'is-active', '--quiet', VPN_UNIT])) !== null;
+}
+
 /**
- * OpenVPN data-channel-offload interfaces. With DCO the tunnel lives in the kernel,
- * so it keeps carrying traffic even if the openvpn process was killed without
- * cleaning up; that orphaned tunnel is only visible here.
+ * Queries kernel tunnel interfaces (`tun` or `ovpn-dco`). With DCO the tunnel
+ * lives in the kernel, so it keeps carrying traffic even if the openvpn process
+ * was killed without cleaning up; standard `tun` interfaces also appear here
+ * while the openvpn scope is still alive without a management socket.
  */
-async function dcoInterfaces() {
-    const json = await output(['ip', '-j', 'addr', 'show', 'type', 'ovpn-dco']);
+async function tunnelInterfaces(type) {
+    const json = await output(['ip', '-j', 'addr', 'show', 'type', type]);
     try {
         // iproute2 prints an empty {} for every interface the type filter excludes.
         return JSON.parse(json ?? '[]').filter(i => i.ifname).map(i => ({
@@ -180,6 +186,8 @@ function vpnExitReason(logPath) {
     }
     if (text.includes('AUTH_FAILED'))
         return 'the server rejected the login (AUTH_FAILED). If it was connected a moment ago, wait a minute before reconnecting; otherwise check the credentials';
+    if (text.includes(' already loaded'))
+        return 'the previous VPN unit is still active or stopping';
     if (text.includes('Exiting due to fatal error'))
         return 'OpenVPN exited with a fatal error';
     return '';
@@ -256,9 +264,11 @@ class DevEnvIndicator extends PanelMenu.Button {
 
     // ---------- VPN ----------
 
-    _startVpn() {
-        if (this._vpn.state !== 'off')
+    async _startVpn() {
+        if (this._vpn.state !== 'off' || this._vpn.pending) {
+            this._sync();
             return;
+        }
         const helper = GLib.file_test(NOPASSWD_HELPER, GLib.FileTest.IS_EXECUTABLE);
         const dir = expandHome(this._settings.get_string('vpn-directory'));
         const config = this._settings.get_string('vpn-config');
@@ -266,11 +276,22 @@ class DevEnvIndicator extends PanelMenu.Button {
         const systemdRun = GLib.find_program_in_path('systemd-run');
         // The helper runs its own root-owned copy of the config.
         if (!helper && (!openvpn || !systemdRun)) {
+            this._sync();
             this._error(`${openvpn ? 'systemd-run' : 'openvpn'} is not installed`);
             return;
         }
         if (!helper && !GLib.file_test(GLib.build_filenamev([dir, config]), GLib.FileTest.EXISTS)) {
+            this._sync();
             this._error(`VPN config not found: ${dir}/${config}`);
+            return;
+        }
+        this._setPending(this._vpn, 'starting');
+        this._sync();
+
+        // Never unlink vpn.sock or spawn a duplicate unit if OpenVPN's scope is already running.
+        if (await isVpnUnitActive()) {
+            this._vpn.pending = null;
+            this._refresh();
             return;
         }
         // A stale socket from a crashed openvpn would make the new one fail to bind.
@@ -281,7 +302,7 @@ class DevEnvIndicator extends PanelMenu.Button {
             // systemd-run --scope moves openvpn out of gnome-shell's cgroup, which
             // systemd kills on logout; it still runs in the foreground so we can wait on it.
             proc = spawn(helper ? ['pkexec', NOPASSWD_HELPER, 'start'] : [
-                'pkexec', systemdRun, '--scope', '--collect', '--quiet', '--unit', 'search-dev-env-vpn',
+                'pkexec', systemdRun, '--scope', '--collect', '--quiet', '--unit', VPN_UNIT,
                 openvpn,
                 '--cd', dir,
                 '--config', config,
@@ -293,15 +314,17 @@ class DevEnvIndicator extends PanelMenu.Button {
                 '--down-pre',
             ], {cwd: helper ? null : dir, logPath: this._vpnLog});
         } catch (e) {
+            this._vpn.pending = null;
+            this._sync();
             this._error(`Could not start OpenVPN: ${e.message}`);
             return;
         }
         this._vpn.proc = proc;
-        this._setPending(this._vpn, 'starting');
         waitProcess(proc).then(status => {
             if (this._vpn.proc === proc)
                 this._vpn.proc = null;
-            if (this._vpn.pending === 'starting' || this._vpn.state === 'starting') {
+            if (this._vpn.pending !== 'stopping' &&
+                (this._vpn.pending === 'starting' || this._vpn.state === 'starting')) {
                 if (PKEXEC_CANCELLED.includes(status))
                     this._error('VPN not started: authentication was cancelled');
                 else if (status !== 0)
@@ -314,8 +337,10 @@ class DevEnvIndicator extends PanelMenu.Button {
     }
 
     async _stopVpn() {
-        if (this._vpn.state === 'off' || this._vpn.state === 'stopping')
+        if (this._vpn.state === 'off' || this._vpn.state === 'stopping' || this._vpn.pending === 'stopping') {
+            this._sync();
             return;
+        }
         this._setPending(this._vpn, 'stopping');
         this._refresh();
         if (this._vpn.orphan) {
@@ -326,13 +351,34 @@ class DevEnvIndicator extends PanelMenu.Button {
         try {
             await vpnManagement(this._socketPath, 'signal SIGTERM');
         } catch {
-            // No management socket yet: pkexec is still asking for the password.
-            if (this._vpn.proc)
+            if (await isVpnUnitActive()) {
+                await this._stopUnit();
+            } else if (this._vpn.proc) {
+                // No management socket or systemd scope yet: pkexec is still asking for the password.
                 this._vpn.proc.force_exit();
-            else
-                this._error('Could not reach OpenVPN to stop it. Stop it with: sudo pkill openvpn');
+            } else {
+                this._vpn.pending = null;
+                this._error(`Could not reach OpenVPN to stop it. Stop it with: sudo systemctl stop ${VPN_UNIT}`);
+            }
         }
         this._refresh();
+    }
+
+    async _stopUnit() {
+        let status = -1;
+        try {
+            if (GLib.file_test(NOPASSWD_HELPER, GLib.FileTest.IS_EXECUTABLE))
+                status = await waitProcess(spawn(['pkexec', NOPASSWD_HELPER, 'stop']));
+            if (status !== 0 && !PKEXEC_CANCELLED.includes(status))
+                status = await waitProcess(spawn(['pkexec', 'systemctl', 'stop', VPN_UNIT]));
+        } catch {
+            status = -1;
+        }
+        if (status !== 0) {
+            this._vpn.pending = null;
+            if (!PKEXEC_CANCELLED.includes(status))
+                this._error(`Could not stop OpenVPN. Stop it with: sudo systemctl stop ${VPN_UNIT}`);
+        }
     }
 
     // No openvpn is left to tear the tunnel down, so delete the interface (and its routes) directly.
@@ -364,12 +410,24 @@ class DevEnvIndicator extends PanelMenu.Button {
             connected = fields[1] === 'CONNECTED';
             detail = connected ? fields[3] ?? '' : (fields[1] ?? '').toLowerCase();
         } catch {
-            running = this._vpn.proc !== null;
-            const [orphan] = running ? [] : await dcoInterfaces();
-            if (orphan) {
-                this._vpn.orphan = orphan.name;
-                running = connected = true;
-                detail = [orphan.address, 'unmanaged'].filter(Boolean).join(' · ');
+            const unitActive = await isVpnUnitActive();
+            running = this._vpn.proc !== null || unitActive;
+            if (unitActive && this._vpn.pending !== 'starting' &&
+                !GLib.file_test(this._socketPath, GLib.FileTest.EXISTS)) {
+                // OpenVPN's scope is still active, but its management socket was lost.
+                const [tun] = [
+                    ...await tunnelInterfaces('tun'),
+                    ...await tunnelInterfaces('ovpn-dco'),
+                ];
+                connected = Boolean(tun);
+                detail = [tun?.address, 'unmanaged'].filter(Boolean).join(' · ');
+            } else if (!running) {
+                const [orphan] = await tunnelInterfaces('ovpn-dco');
+                if (orphan) {
+                    this._vpn.orphan = orphan.name;
+                    running = connected = true;
+                    detail = [orphan.address, 'unmanaged'].filter(Boolean).join(' · ');
+                }
             }
         }
         const checkUrl = this._settings.get_string('vpn-check-url');
@@ -398,10 +456,13 @@ class DevEnvIndicator extends PanelMenu.Button {
     }
 
     _startKube() {
-        if (this._kube.state !== 'off')
+        if (this._kube.state !== 'off') {
+            this._sync();
             return;
+        }
         const dir = expandHome(this._settings.get_string('kube-directory'));
         if (!GLib.file_test(dir, GLib.FileTest.IS_DIR)) {
+            this._sync();
             this._error(`Kube Monitor directory not found: ${dir}`);
             return;
         }
@@ -411,6 +472,7 @@ class DevEnvIndicator extends PanelMenu.Button {
             proc = spawn(['bash', '-lc', this._settings.get_string('kube-start-command')],
                 {cwd: dir, logPath: this._kubeStartLog});
         } catch (e) {
+            this._sync();
             this._error(`Could not start Kube Monitor: ${e.message}`);
             return;
         }
@@ -429,13 +491,16 @@ class DevEnvIndicator extends PanelMenu.Button {
     }
 
     _stopKube() {
-        if (this._kube.state === 'off' || this._kube.state === 'stopping')
+        if (this._kube.state === 'off' || this._kube.state === 'stopping') {
+            this._sync();
             return;
+        }
         this._kube.proc?.force_exit();
         this._setPending(this._kube, 'stopping');
         try {
             spawn(['fuser', '-k', '-TERM', `${this._settings.get_int('kube-port')}/tcp`]);
         } catch (e) {
+            this._kube.pending = null;
             this._error(`Could not stop Kube Monitor: ${e.message}`);
         }
         this._refresh();

@@ -55,6 +55,9 @@ start)
         --management-client-user "\$user" \\
         --down-pre
     ;;
+stop)
+    exec systemctl stop search-dev-env-vpn.scope
+    ;;
 remove-dco)
     # Only orphaned OpenVPN kernel tunnels may be deleted.
     ifname="\${2:-}"
@@ -63,7 +66,7 @@ remove-dco)
     exec ip link delete "\$ifname"
     ;;
 *)
-    echo "usage: \$0 start | remove-dco IFNAME" >&2
+    echo "usage: \$0 start | stop | remove-dco IFNAME" >&2
     exit 2
     ;;
 esac

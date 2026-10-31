@@ -15,7 +15,8 @@ yellow when only part of the environment is up and green when everything is runn
 - OpenVPN runs as root in its own systemd scope (`pkexec systemd-run --scope … openvpn`),
   so logging out or restarting GNOME Shell does not kill it. It opens a management socket at
   `~/.cache/search-dev-env/vpn.sock` that only your user may connect to. Status comes from its
-  `state` command and disconnecting sends `signal SIGTERM`, so you only need your password to connect.
+  `state` command and disconnecting sends `signal SIGTERM` (falling back to stopping the
+  `search-dev-env-vpn.scope` systemd unit if the management socket is unresponsive or missing).
 - If openvpn died without cleaning up, its kernel (DCO) tunnel can keep carrying traffic.
   The VPN then shows "unmanaged", and switching it off deletes the interface
   (`pkexec ip link delete tun0`).
@@ -40,8 +41,8 @@ This copies the config (and its `auth-user-pass` file) to `/etc/openvpn/search-d
 (root only), installs the helper `/usr/local/sbin/search-dev-env-vpn`, and adds a polkit rule
 (`/etc/polkit-1/rules.d/50-search-dev-env-vpn.rules`) that lets your user run that helper through
 `pkexec` without authenticating. The extension uses the helper whenever it is installed, and the
-VPN directory/config settings are then ignored. The helper only starts that fixed config or deletes
-an orphaned `ovpn-dco` interface. It never takes paths from the caller, because the original config on
+VPN directory/config settings are then ignored. The helper only starts or stops that fixed unit or
+deletes an orphaned `ovpn-dco` interface. It never takes paths from the caller, because the original config on
 the shared disk is world-writable and its `up`/`down` scripts run as root.
 
 Re-run it after changing the VPN config. `sudo ./setup-nopasswd.sh --uninstall` restores the
